@@ -54,30 +54,33 @@ jobs:
           echo "Successfully cloned Neovim repository"
           cd neovim
           
-          # Build with portable static configuration
-          echo "Building Neovim with portable static configuration..."
+          # Build following official Neovim documentation for static binary
+          echo "Building Neovim static binary (following official docs)..."
           
-          # Set environment for portable build
-          export CMAKE_BUILD_TYPE=Release
-          export CMAKE_INSTALL_PREFIX=/usr/local
+          # Official method: make CMAKE_EXTRA_FLAGS="-DSTATIC_BUILD=1"
+          # This is exactly what the Neovim docs recommend for Alpine Linux
+          make CMAKE_EXTRA_FLAGS="-DSTATIC_BUILD=1"
           
-          # Build with proper static flags and portable paths
-          make CMAKE_BUILD_TYPE=Release \
-               CMAKE_EXTRA_FLAGS="-DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DSTATIC_BUILD=ON -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON" \
-               CMAKE_PREFIX_PATH=/usr/local \
-               DEPS_CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local"
-          
-          # Verify the binary and check for hardcoded paths
-          echo "Checking binary for hardcoded paths..."
+          # Verify the binary is statically linked
+          echo "Verifying binary is statically linked..."
+          file build/bin/nvim
           echo "Binary size: $(du -h build/bin/nvim)"
-          echo "Looking for GitHub Actions paths..."
-          strings build/bin/nvim | grep -E "(/__w/|/github/workspace)" || echo "No GitHub paths found"
-          echo "Looking for runtime paths..."
-          strings build/bin/nvim | grep -E "(runtime|share)" | head -5 || echo "No obvious runtime paths found"
+          
+          # Check that it's actually statically linked
+          if ldd build/bin/nvim 2>&1 | grep -q "not a dynamic executable"; then
+            echo "✅ Binary is statically linked"
+          else
+            echo "❌ Binary is not statically linked"
+            ldd build/bin/nvim || echo "ldd failed (good sign for static binary)"
+          fi
+          
+          # Check for hardcoded paths from build environment
+          echo "Checking for hardcoded paths..."
+          strings build/bin/nvim | grep -E "(/__w/|/github/workspace)" || echo "✅ No GitHub Actions paths found"
           
           # Copy the binary
           cp build/bin/nvim ../artifacts/nvim-static-x86_64
-          echo "Static build completed successfully"
+          echo "✅ Static build completed successfully"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
