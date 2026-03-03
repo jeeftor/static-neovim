@@ -1,7 +1,9 @@
 name: Build Static Neovim
 
 on:
-  workflow_dispatch: null
+  workflow_dispatch
+  push:
+    branches: [ main, master ]
   schedule:
     - cron: '0 2 * * 1'
 
@@ -21,7 +23,32 @@ jobs:
 
       - name: Clone and build Neovim
         run: |
-          git clone --depth 1 --branch stable https://github.com/neovim/neovim
+          # Try different clone methods if one fails
+          echo "Attempting to clone Neovim repository..."
+          
+          # Method 1: HTTPS clone (most reliable)
+          if ! git clone --depth 1 --branch stable https://github.com/neovim/neovim; then
+            echo "HTTPS clone failed, trying with verbose output..."
+            sleep 10
+            
+            # Method 2: HTTPS with verbose output for debugging
+            if ! GIT_CURL_VERBOSE=1 git clone --depth 1 --branch stable https://github.com/neovim/neovim; then
+              echo "Verbose HTTPS clone failed, trying git protocol..."
+              sleep 10
+              
+              # Method 3: Git protocol (fallback)
+              if ! git clone --depth 1 --branch stable git://github.com/neovim/neovim; then
+                echo "All clone methods failed, waiting 60 seconds and retrying HTTPS..."
+                sleep 60
+                git clone --depth 1 --branch stable https://github.com/neovim/neovim || {
+                  echo "ERROR: All clone attempts failed"
+                  exit 1
+                }
+              fi
+            fi
+          fi
+          
+          echo "Successfully cloned Neovim repository"
           cd neovim
           make CMAKE_EXTRA_FLAGS="-DSTATIC_BUILD=1"
           cp build/bin/nvim ../artifacts/nvim-static-x86_64
@@ -48,3 +75,59 @@ jobs:
 
       - name: Test Neovim binary
         run: ./nvim-binary/nvim-static-x86_64 --version
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    if: success()
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: static-neovim
+          path: ./nvim-binary
+
+      - name: Get Neovim version
+        id: version
+        run: |
+          VERSION=$(./nvim-binary/nvim-static-x86_64 --version | head -n1 | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Neovim version: $VERSION"
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.version }}-static-${{ github.run_number }}
+          release_name: Static Neovim ${{ steps.version.outputs.version }}
+          body: |
+            Static binary of Neovim ${{ steps.version.outputs.version }}
+            
+            **Features:**
+            - Fully static binary (no external dependencies)
+            - Built from stable branch
+            - x86_64 architecture
+            - Ready to use on any Linux system
+            
+            **Usage:**
+            ```bash
+            chmod +x nvim-static-x86_64
+            ./nvim-static-x86_64
+            ```
+            
+            **Build:** Run #${{ github.run_number }}
+            **Date:** ${{ github.event.head_commit.timestamp }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./nvim-binary/nvim-static-x86_64
+          asset_name: nvim-static-x86_64
+          asset_content_type: application/octet-stream
