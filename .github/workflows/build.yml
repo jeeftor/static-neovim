@@ -164,12 +164,12 @@ jobs:
         continue-on-error: true
 
       - name: Make binary executable
-        if: hashFiles('nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64') != ''
+        if: ${{ hashFiles(format('nvim-binary/nvim-{0}-static-x86_64', matrix.build-method)) != '' }}
         run: chmod +x ./nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64
 
       - name: Get Neovim version
         id: version
-        if: hashFiles('nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64') != ''
+        if: ${{ hashFiles(format('nvim-binary/nvim-{0}-static-x86_64', matrix.build-method)) != '' }}
         run: |
           VERSION=$(./nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64 --version | head -n1 | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -177,7 +177,7 @@ jobs:
 
       - name: Create Release
         id: create_release
-        if: hashFiles('nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64') != ''
+        if: ${{ hashFiles(format('nvim-binary/nvim-{0}-static-x86_64', matrix.build-method)) != '' }}
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -204,7 +204,7 @@ jobs:
           prerelease: false
 
       - name: Upload Release Asset
-        if: hashFiles('nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64') != ''
+        if: ${{ hashFiles(format('nvim-binary/nvim-{0}-static-x86_64', matrix.build-method)) != '' }}
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
