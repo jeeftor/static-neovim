@@ -54,13 +54,30 @@ jobs:
           echo "Successfully cloned Neovim repository"
           cd neovim
           
-          # Build with CMake (working method)
-          echo "Building Neovim with CMake static build..."
-          make CMAKE_EXTRA_FLAGS="-DSTATIC_BUILD=1"
+          # Build with portable static configuration
+          echo "Building Neovim with portable static configuration..."
+          
+          # Set environment for portable build
+          export CMAKE_BUILD_TYPE=Release
+          export CMAKE_INSTALL_PREFIX=/usr/local
+          
+          # Build with proper static flags and portable paths
+          make CMAKE_BUILD_TYPE=Release \
+               CMAKE_EXTRA_FLAGS="-DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DSTATIC_BUILD=ON -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON" \
+               CMAKE_PREFIX_PATH=/usr/local \
+               DEPS_CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local"
+          
+          # Verify the binary and check for hardcoded paths
+          echo "Checking binary for hardcoded paths..."
+          echo "Binary size: $(du -h build/bin/nvim)"
+          echo "Looking for GitHub Actions paths..."
+          strings build/bin/nvim | grep -E "(/__w/|/github/workspace)" || echo "No GitHub paths found"
+          echo "Looking for runtime paths..."
+          strings build/bin/nvim | grep -E "(runtime|share)" | head -5 || echo "No obvious runtime paths found"
           
           # Copy the binary
           cp build/bin/nvim ../artifacts/nvim-static-x86_64
-          echo "CMake build completed successfully"
+          echo "Static build completed successfully"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
