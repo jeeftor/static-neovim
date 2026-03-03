@@ -1,7 +1,7 @@
 name: Build Static Neovim
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
   push:
     branches: [ main, master ]
   schedule:
@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: write
-  releases: write
 
 jobs:
   build:
