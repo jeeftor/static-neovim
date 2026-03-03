@@ -1,0 +1,50 @@
+name: Build Static Neovim
+
+on:
+  workflow_dispatch: null
+  schedule:
+    - cron: '0 2 * * 1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          apk update
+          apk add --no-cache build-base cmake coreutils curl gettext-tiny-dev git ninja-build
+
+      - name: Create artifacts directory
+        run: mkdir -p artifacts
+
+      - name: Clone and build Neovim
+        run: |
+          git clone --depth 1 --branch stable https://github.com/neovim/neovim
+          cd neovim
+          make CMAKE_EXTRA_FLAGS="-DSTATIC_BUILD=1"
+          cp build/bin/nvim ../artifacts/nvim-static-x86_64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-neovim
+          path: artifacts/nvim-static-x86_64
+          retention-days: 30
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: static-neovim
+          path: ./nvim-binary
+
+      - name: Make binary executable
+        run: chmod +x ./nvim-binary/nvim-static-x86_64
+
+      - name: Test Neovim binary
+        run: ./nvim-binary/nvim-static-x86_64 --version
