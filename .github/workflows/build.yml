@@ -135,6 +135,9 @@ jobs:
           name: static-neovim-${{ matrix.build-method }}
           path: ./nvim-binary
 
+      - name: Make binary executable
+        run: chmod +x ./nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64
+
       - name: Get Neovim version
         id: version
         run: |
