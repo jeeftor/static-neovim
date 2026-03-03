@@ -1,7 +1,7 @@
 name: Build Static Neovim
 
 on:
-  workflow_dispatch
+  workflow_dispatch: null
   push:
     branches: [ main, master ]
   schedule:
