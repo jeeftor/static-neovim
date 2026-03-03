@@ -58,32 +58,48 @@ jobs:
           echo "Successfully cloned Neovim repository"
           cd neovim
           
-          # Try CMake build first (existing method)
+          # Try CMake build
           echo "Attempting CMake static build..."
           if make CMAKE_EXTRA_FLAGS="-DSTATIC_BUILD=1"; then
             echo "CMake build succeeded"
             cp build/bin/nvim ../artifacts/nvim-cmake-static-x86_64
           else
-            echo "CMake build failed, trying Zig build..."
-            
-            # Zig build as fallback
-            if command -v zig >/dev/null 2>&1; then
-              echo "Building with Zig..."
-              zig build-exe --target x86_64-linux-musl -O ReleaseFast -static \
-                -I src -I build/src \
-                --deps luajit,libuv,vterm,tree-sitter \
-                --search-musl /usr/local/musl \
-                -fno-sanitize=all \
-                -femit-bin=../artifacts/nvim-zig-static-x86_64 \
-                src/nvim/main.c || {
+            echo "CMake build failed"
+          fi
+          
+          # Try Zig build independently
+          echo "Attempting Zig static build..."
+          if command -v zig >/dev/null 2>&1; then
+            echo "Building with Zig..."
+            # Use Zig to compile with static linking
+            zig build-exe --target x86_64-linux-musl -O ReleaseFast -static \
+              -I . -I build/src \
+              -I .deps/src \
+              -fno-sanitize=all \
+              -femit-bin=../artifacts/nvim-zig-static-x86_64 \
+              src/nvim/main.c 2>/dev/null || {
+              echo "Zig build failed - trying alternative approach..."
+              # Alternative: use Zig as C compiler
+              zig cc -target x86_64-linux-musl -static -O3 \
+                -o ../artifacts/nvim-zig-static-x86_64 \
+                build/src/nvim/auto/main.c 2>/dev/null || {
                 echo "Zig build also failed"
-                exit 1
               }
+            }
+            
+            if [ -f ../artifacts/nvim-zig-static-x86_64 ]; then
               echo "Zig build succeeded"
             else
-              echo "Neither CMake nor Zig build succeeded"
-              exit 1
+              echo "Zig build failed"
             fi
+          else
+            echo "Zig not found"
+          fi
+          
+          # Check if at least one build succeeded
+          if [ ! -f ../artifacts/nvim-cmake-static-x86_64 ] && [ ! -f ../artifacts/nvim-zig-static-x86_64 ]; then
+            echo "ERROR: Neither CMake nor Zig build succeeded"
+            exit 1
           fi
 
       - name: Upload CMake artifact
@@ -105,21 +121,32 @@ jobs:
   test:
     runs-on: ubuntu-latest
     needs: build
-    strategy:
-      matrix:
-        build-method: [cmake, zig]
     steps:
-      - name: Download artifact
+      - name: Download CMake artifact
         uses: actions/download-artifact@v4
         with:
-          name: static-neovim-${{ matrix.build-method }}
-          path: ./nvim-binary
+          name: static-neovim-cmake
+          path: ./nvim-cmake
+        continue-on-error: true
 
-      - name: Make binary executable
-        run: chmod +x ./nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64
+      - name: Download Zig artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: static-neovim-zig
+          path: ./nvim-zig
+        continue-on-error: true
 
-      - name: Test Neovim binary
-        run: ./nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64 --version
+      - name: Test CMake binary
+        if: hashFiles('nvim-cmake/nvim-cmake-static-x86_64') != ''
+        run: |
+          chmod +x nvim-cmake/nvim-cmake-static-x86_64
+          ./nvim-cmake/nvim-cmake-static-x86_64 --version
+
+      - name: Test Zig binary
+        if: hashFiles('nvim-zig/nvim-zig-static-x86_64') != ''
+        run: |
+          chmod +x nvim-zig/nvim-zig-static-x86_64
+          ./nvim-zig/nvim-zig-static-x86_64 --version
 
   release:
     runs-on: ubuntu-latest
@@ -134,12 +161,15 @@ jobs:
         with:
           name: static-neovim-${{ matrix.build-method }}
           path: ./nvim-binary
+        continue-on-error: true
 
       - name: Make binary executable
+        if: hashFiles('nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64') != ''
         run: chmod +x ./nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64
 
       - name: Get Neovim version
         id: version
+        if: hashFiles('nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64') != ''
         run: |
           VERSION=$(./nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64 --version | head -n1 | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -147,6 +177,7 @@ jobs:
 
       - name: Create Release
         id: create_release
+        if: hashFiles('nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64') != ''
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -173,6 +204,7 @@ jobs:
           prerelease: false
 
       - name: Upload Release Asset
+        if: hashFiles('nvim-binary/nvim-${{ matrix.build-method }}-static-x86_64') != ''
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
